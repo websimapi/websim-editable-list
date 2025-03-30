@@ -1,4 +1,4 @@
-import ReactDOM from 'react-dom/client';
+import { createRoot } from 'react-dom/client'; // Import createRoot directly
 import { config } from './config.js';
 
 const { useState, useEffect, useSyncExternalStore } = React; // React is globally available via script tag
@@ -10,19 +10,40 @@ function App() {
     const [newItemText, setNewItemText] = useState('');
     const [isCreator, setIsCreator] = useState(false);
     const [creatorUsername, setCreatorUsername] = useState('');
+    const [currentUser, setCurrentUser] = useState(null);
+
+    // Get current user info
+    useEffect(() => {
+        async function fetchUserInfo() {
+            // Use room.getMyInfo() which might be async or sync depending on implementation
+            // Handle potential async nature if needed
+             try {
+                 const userInfo = await room.getMyInfo(); // Assuming getMyInfo might be async
+                 setCurrentUser(userInfo);
+             } catch (error) {
+                 console.error("Error fetching current user info:", error);
+             }
+        }
+        fetchUserInfo();
+
+        // Optional: Subscribe to changes if user info can update
+        // const unsubscribe = room.subscribeUserInfo(setCurrentUser);
+        // return () => unsubscribe(); // Cleanup subscription
+
+    }, []); // Run once on mount
+
 
     // Fetch creator username and check if the current user is the creator
     useEffect(() => {
+        // Ensure currentUser is loaded before checking creator status
+        if (!currentUser) return;
+
         async function checkCreator() {
             try {
                 const creator = await window.websim.getCreatedBy();
-                 // Use room.getMyInfo() to get the current user's info.
-                 // Make sure to handle the case where room might not be ready or getMyInfo is async.
-                 // For simplicity, assuming getMyInfo sync returns or we handle async appropriately elsewhere if needed.
-                const currentUser = room.getMyInfo(); // This might need await if it's async
                 setCreatorUsername(creator.username);
                  // Compare usernames ensuring both currentUser and creator objects are valid
-                if (currentUser && creator && currentUser.username === creator.username) {
+                if (creator && currentUser.username === creator.username) {
                     setIsCreator(true);
                 } else {
                     setIsCreator(false); // Ensure isCreator is false if not the creator
@@ -33,7 +54,7 @@ function App() {
             }
         }
         checkCreator();
-    }, []); // Empty dependency array ensures this runs once on mount
+    }, [currentUser]); // Rerun checkCreator when currentUser is updated
 
     // Subscribe to list items
     const items = useSyncExternalStore(
@@ -68,7 +89,12 @@ function App() {
             await room.collection(config.collectionName).delete(itemId);
         } catch (error) {
             console.error("Error deleting item:", error);
-            alert("Failed to delete item. See console for details."); // Provide user feedback
+             // Check if error is due to permissions (e.g., trying to delete another user's item)
+            if (error.message && error.message.includes("Permission denied")) {
+                 alert("Permission denied: You can only delete items you created.");
+             } else {
+                 alert("Failed to delete item. See console for details.");
+             }
         }
     };
 
@@ -82,6 +108,7 @@ function App() {
                 {sortedItems.map(item => (
                     <li key={item.id}>
                         <span>{item.text}</span>
+                        {/* Show delete button only if the current user is the creator */}
                         {isCreator && (
                             <button className="delete-button" onClick={() => handleDeleteItem(item.id)}>
                                 Delete
@@ -103,11 +130,15 @@ function App() {
                     <button className="add-button" onClick={handleAddItem}>Add</button>
                 </div>
             )}
-             {!isCreator && items.length > 0 && <p>Only the creator ({creatorUsername}) can edit this list.</p>}
-             {!isCreator && items.length === 0 && creatorUsername && <p>The list is currently empty. Only the creator ({creatorUsername}) can add items.</p>}
+             {/* Show message if not creator */}
+             {!isCreator && creatorUsername && <p>Only the creator ({creatorUsername}) can add or delete items in this list.</p>}
+             {/* Message while loading creator info */}
+             {!creatorUsername && <p>Loading list information...</p>}
+
         </div>
     );
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
+// Use the imported createRoot function
+const root = createRoot(document.getElementById('root'));
 root.render(<App />);
